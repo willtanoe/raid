@@ -1,0 +1,49 @@
+name: Bug report
+description: Report incorrect or unsafe Raid behavior
+title: "[Bug]: "
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Do not disclose deletion-boundary or privilege vulnerabilities publicly. Use private vulnerability reporting instead.
+  - type: input
+    id: version
+    attributes:
+      label: Raid version
+      description: Output of `raid version`.
+    validations:
+      required: true
+  - type: input
+    id: ubuntu
+    attributes:
+      label: Ubuntu and kernel version
+      placeholder: Ubuntu 24.04, Linux 6.8.0
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: What happened?
+      description: Describe the observed and expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction steps
+      description: Include the exact command and flags. Redact private paths and data.
+    validations:
+      required: true
+  - type: dropdown
+    id: destructive
+    attributes:
+      label: Did the command modify anything?
+      options:
+        - No, preview only
+        - Yes, moved files to Trash
+        - Yes, permanent file removal
+        - Yes, package or system maintenance
+        - Unknown
+    validations:
+      required: true

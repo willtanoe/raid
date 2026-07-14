@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest a focused Ubuntu maintenance feature
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What user problem should Raid solve?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behavior
+      description: Explain the target, preview behavior, and expected safety boundary.
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How can users verify the change?
+      description: Describe how Raid can show exactly what will happen before mutation.
+    validations:
+      required: true

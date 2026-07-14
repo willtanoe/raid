@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test on Ubuntu
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify formatting
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l cmd/raid/*.go internal/raid/*.go)"
+          if [[ -n "$unformatted" ]]; then
+            printf 'The following files require gofmt:\n%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
+
+      - name: Build
+        run: make build
+
+      - name: Smoke test
+        run: |
+          ./bin/raid version
+          ./bin/raid status --json >/dev/null
+          ./bin/raid analyze . --json >/dev/null
