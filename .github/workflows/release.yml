@@ -8,8 +8,30 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build and upload release assets
+  create-release:
+    name: Create release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      upload_url: ${{ steps.create.outputs.upload_url }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Create release
+        id: create
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --draft
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: create-release
     runs-on: ubuntu-24.04
     timeout-minutes: 15
 
@@ -54,3 +76,16 @@ jobs:
           if [[ -f raid ]]; then
             gh release upload "${GITHUB_REF_NAME}" raid --clobber
           fi
+
+  publish:
+    name: Publish release
+    needs: [create-release, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+
+    steps:
+      - name: Publish release
+        env:
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release edit "${GITHUB_REF_NAME}" --draft=false
