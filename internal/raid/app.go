@@ -145,13 +145,13 @@ Usage:
 
 Commands:
   clean        Clean conservative user and developer caches
-  uninstall    Uninstall an APT, Snap, or Flatpak package
-  optimize     Run bounded Linux maintenance tasks
+  uninstall    Uninstall an APT, DNF, Pacman, Snap, or Flatpak package
+  optimize     Run bounded Linux maintenance tasks (systemd, fonts, journals, package caches)
   analyze      Analyze disk usage for a directory
   status       Show a compact system health snapshot
   purge        Remove rebuildable project artifacts
   installer    Find or remove old installer files
-  update       Check and apply APT, Snap, and Flatpak updates
+  update       Check and apply system updates (APT, DNF, Pacman, Snap, Flatpak)
   docker       Clean unused Docker containers, images, and volumes
   search       Find files by size, age, or name pattern
   convert      Convert shell history between zsh, fish, and bash formats

@@ -56,6 +56,15 @@ func detectPackage(name string) []packageMatch {
 			matches = append(matches, packageMatch{manager: "apt", name: name, remove: []string{"sudo", "-n", "apt-get", "remove", "--", name}})
 		}
 	}
+	if commandExists("rpm") {
+		output, err := exec.Command("rpm", "-q", "--qf=%{VERSION}", name).Output()
+		if err == nil && strings.TrimSpace(string(output)) != "" {
+			matches = append(matches, packageMatch{manager: "dnf", name: name, remove: []string{"sudo", "-n", "dnf", "remove", "-y", name}})
+		}
+	}
+	if commandExists("pacman") && commandSucceeds("pacman", "-Q", name) {
+		matches = append(matches, packageMatch{manager: "pacman", name: name, remove: []string{"sudo", "-n", "pacman", "-R", "--noconfirm", name}})
+	}
 	if commandExists("snap") && commandSucceeds("snap", "list", name) {
 		matches = append(matches, packageMatch{manager: "snap", name: name, remove: []string{"sudo", "-n", "snap", "remove", name}})
 	}
@@ -85,11 +94,11 @@ func (a *app) runUninstall(args []string) error {
 		return errors.New("--permanent applies only to file cleanup commands")
 	}
 	if len(rest) != 1 || !packageNamePattern.MatchString(rest[0]) {
-		return errors.New("provide one exact APT, Snap, or Flatpak package name")
+		return errors.New("provide one exact APT, DNF, Pacman, Snap, or Flatpak package name")
 	}
 	matches := detectPackage(rest[0])
 	if len(matches) == 0 {
-		return fmt.Errorf("package %q was not found in APT, Snap, or Flatpak", rest[0])
+		return fmt.Errorf("package %q was not found in any known package manager", rest[0])
 	}
 	if len(matches) > 1 {
 		managers := make([]string, 0, len(matches))
@@ -131,6 +140,9 @@ func (a *app) runOptimize(args []string) error {
 		{label: "Vacuum journal entries older than 14 days", command: []string{"sudo", "-n", "journalctl", "--vacuum-time=14d"}, needs: "journalctl"},
 		{label: "Clean downloaded APT package files", command: []string{"sudo", "-n", "apt-get", "clean"}, needs: "apt-get"},
 		{label: "Remove unused APT packages and old kernels", command: []string{"sudo", "-n", "apt-get", "autoremove", "-y"}, needs: "apt-get"},
+		{label: "Clean DNF package cache", command: []string{"sudo", "-n", "dnf", "clean", "all"}, needs: "dnf"},
+		{label: "Remove unused DNF packages", command: []string{"sudo", "-n", "dnf", "autoremove", "-y"}, needs: "dnf"},
+		{label: "Clean Pacman package cache", command: []string{"sudo", "-n", "pacman", "-Sc", "--noconfirm"}, needs: "pacman"},
 		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
 	}
 	var available []maintenanceAction
@@ -216,6 +228,8 @@ func (a *app) runUpdate(args []string) error {
 	actions := []maintenanceAction{
 		{label: "Update APT package lists", command: []string{"sudo", "-n", "apt-get", "update"}, needs: "apt-get"},
 		{label: "Upgrade APT packages", command: []string{"sudo", "-n", "apt-get", "upgrade", "-y"}, needs: "apt-get"},
+		{label: "Upgrade DNF packages", command: []string{"sudo", "-n", "dnf", "upgrade", "-y"}, needs: "dnf"},
+		{label: "Upgrade Pacman packages", command: []string{"sudo", "-n", "pacman", "-Syu", "--noconfirm"}, needs: "pacman"},
 		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
 	}
 
