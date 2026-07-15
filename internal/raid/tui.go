@@ -116,7 +116,7 @@ func (m mainMenuModel) View() string {
 	}
 	contentWidth := minInt(72, maxInt(42, m.width-8))
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("RAID // LINUX TOOLKIT"))
+	body.WriteString(titleStyle.Render("RAID // LINUX TOOLKIT by github.com/willtanoe"))
 	body.WriteString("\n")
 	body.WriteString(mutedStyle.Render("Safe cleanup. Exact plans. No background daemon."))
 	body.WriteString("\n\n")
