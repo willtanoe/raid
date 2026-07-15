@@ -33,6 +33,8 @@ type analyzeModel struct {
 	confirming bool
 	deleting   bool
 	err        error
+	totalSize  int64
+	maxSize    int64
 }
 
 func scanDirectoryCmd(path string) tea.Cmd {
@@ -55,7 +57,7 @@ func deleteAnalyzePathCmd(a *app, path string) tea.Cmd {
 func (m analyzeModel) Init() tea.Cmd { return scanDirectoryCmd(m.path) }
 
 func (m analyzeModel) visibleRows() int {
-	return maxInt(4, m.height-9)
+	return maxInt(4, m.height-8)
 }
 
 func (m *analyzeModel) normalizeViewport() {
@@ -78,6 +80,19 @@ func (m *analyzeModel) normalizeViewport() {
 	}
 }
 
+func (m *analyzeModel) recomputeStats() {
+	m.totalSize = 0
+	m.maxSize = 1
+	for _, e := range m.entries {
+		if e.size > 0 {
+			m.totalSize += e.size
+		}
+		if e.size > m.maxSize {
+			m.maxSize = e.size
+		}
+	}
+}
+
 func (m analyzeModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := message.(type) {
 	case tea.WindowSizeMsg:
@@ -89,6 +104,7 @@ func (m analyzeModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 			m.entries = msg.entries
 			m.err = msg.err
 			m.cursor, m.offset = 0, 0
+			m.recomputeStats()
 		}
 	case analyzeDeleteMsg:
 		m.deleting = false
@@ -104,7 +120,7 @@ func (m analyzeModel) Update(message tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.confirming {
 			switch msg.String() {
-			case "y", "Y":
+			case "y", "Y", "enter":
 				if len(m.entries) > 0 {
 					m.deleting = true
 					return m, deleteAnalyzePathCmd(m.app, m.entries[m.cursor].path)
@@ -168,15 +184,35 @@ func truncateMiddle(value string, width int) string {
 	return value[:left] + "..." + value[len(value)-right:]
 }
 
+func sizeColorForPercent(percent float64) lipgloss.Style {
+	switch {
+	case percent >= 50:
+		return dangerStyle
+	case percent >= 20:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
+	case percent >= 5:
+		return lipgloss.NewStyle().Foreground(lipgloss.Color("#56B6C2"))
+	default:
+		return mutedStyle
+	}
+}
+
 func (m analyzeModel) View() string {
 	if m.width == 0 {
 		return ""
 	}
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("RAID // DISK ANALYZER"))
+
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render("Analyze Disk")
+	body.WriteString(header)
 	body.WriteString("\n")
-	body.WriteString(mutedStyle.Render(truncateMiddle(m.path, maxInt(30, m.width-8))))
+	pathDisplay := mutedStyle.Render(truncateMiddle(m.path, maxInt(30, m.width-8)))
+	body.WriteString(pathDisplay)
+	if m.totalSize > 0 {
+		body.WriteString(mutedStyle.Render("  |  Total: " + formatBytes(m.totalSize)))
+	}
 	body.WriteString("\n\n")
+
 	if m.loading {
 		body.WriteString(positiveStyle.Render("Scanning directory sizes..."))
 		body.WriteString("\n")
@@ -189,35 +225,59 @@ func (m analyzeModel) View() string {
 		body.WriteString(mutedStyle.Render("Directory is empty."))
 		body.WriteString("\n")
 	}
+
 	rows := m.visibleRows()
 	end := minInt(len(m.entries), m.offset+rows)
-	nameWidth := maxInt(20, m.width-28)
+	nameWidth := maxInt(18, m.width-38)
+
 	for index := m.offset; index < end; index++ {
 		entry := m.entries[index]
-		kind := " "
+
+		icon := "  "
 		if entry.isDir {
-			kind = "/"
+			icon = "📁"
 		}
+
 		name := truncateMiddle(filepath.Base(entry.path), nameWidth)
-		line := fmt.Sprintf("%s %-*s %10s", kind, nameWidth, name, formatBytes(entry.size))
+		size := formatBytes(entry.size)
+		percent := 0.0
+		if m.maxSize > 0 && entry.size >= 0 {
+			percent = float64(entry.size) / float64(m.maxSize) * 100
+		}
+
+		barWidth := 10
+		filled := int(percent * float64(barWidth) / 100)
+		if filled > barWidth {
+			filled = barWidth
+		}
+		bar := sizeColorForPercent(percent).Render(strings.Repeat("█", filled)) + mutedStyle.Render(strings.Repeat("░", barWidth-filled))
+
+		idxLabel := fmt.Sprintf("%3d.", index+1)
+
+		line := fmt.Sprintf("%s %s %s %s %10s", idxLabel, bar, icon, name, size)
+
 		if index == m.cursor {
-			body.WriteString(activeStyle.Render("> " + line))
+			cursorLine := activeStyle.Render("> " + line)
+			body.WriteString(cursorLine)
 		} else {
-			body.WriteString("  " + line)
+			body.WriteString("   " + line)
 		}
 		body.WriteString("\n")
 	}
+
 	if m.confirming && len(m.entries) > 0 {
 		body.WriteString("\n")
 		body.WriteString(dangerStyle.Render("Move to Trash? "))
 		body.WriteString(truncateMiddle(m.entries[m.cursor].path, maxInt(24, m.width-24)))
 		body.WriteString("  [y/N]")
-	}
-	if m.deleting {
+	} else if m.deleting {
 		body.WriteString("\n" + dangerStyle.Render("Moving selected entry to Trash..."))
 	}
+
 	body.WriteString("\n")
-	body.WriteString(mutedStyle.Render("j/k move  Enter open  Backspace parent  d trash  r rescan  Esc/q back"))
+	footer := mutedStyle.Render("j/k ↑↓ move  Enter open  Backspace parent  d trash  r rescan  Esc/q back")
+	body.WriteString(footer)
+
 	return lipgloss.NewStyle().Padding(1, 2).Render(body.String())
 }
 

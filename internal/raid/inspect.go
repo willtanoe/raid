@@ -105,24 +105,38 @@ type cpuTimes struct {
 	total uint64
 }
 
+type ProcessInfo struct {
+	PID         int     `json:"pid"`
+	Name        string  `json:"name"`
+	CPUPercent  float64 `json:"cpu_percent"`
+	MemoryBytes uint64  `json:"memory_bytes"`
+}
+
 type statusSnapshot struct {
-	Timestamp       string  `json:"timestamp"`
-	Hostname        string  `json:"hostname"`
-	Kernel          string  `json:"kernel"`
-	CPUPercent      float64 `json:"cpu_percent"`
-	CPUCores        int     `json:"cpu_cores"`
-	MemoryUsed      uint64  `json:"memory_used_bytes"`
-	MemoryTotal     uint64  `json:"memory_total_bytes"`
-	DiskUsed        uint64  `json:"disk_used_bytes"`
-	DiskTotal       uint64  `json:"disk_total_bytes"`
-	Load1           float64 `json:"load_1"`
-	UptimeSeconds   float64 `json:"uptime_seconds"`
-	TemperatureC    float64 `json:"temperature_c,omitempty"`
-	NetworkReceived uint64  `json:"network_received_bytes"`
-	NetworkSent     uint64  `json:"network_sent_bytes"`
-	BatteryPercent  int     `json:"battery_percent,omitempty"`
-	BatteryStatus   string  `json:"battery_status,omitempty"`
-	GPU             string  `json:"gpu,omitempty"`
+	Timestamp       string        `json:"timestamp"`
+	Hostname        string        `json:"hostname"`
+	Kernel          string        `json:"kernel"`
+	CPUPercent      float64       `json:"cpu_percent"`
+	CPUCores        int           `json:"cpu_cores"`
+	PerCoreCPU      []float64     `json:"per_core_cpu,omitempty"`
+	MemoryUsed      uint64        `json:"memory_used_bytes"`
+	MemoryTotal     uint64        `json:"memory_total_bytes"`
+	SwapUsed        uint64        `json:"swap_used_bytes"`
+	SwapTotal       uint64        `json:"swap_total_bytes"`
+	DiskUsed        uint64        `json:"disk_used_bytes"`
+	DiskTotal       uint64        `json:"disk_total_bytes"`
+	DiskReadRate    float64       `json:"disk_read_mbps,omitempty"`
+	DiskWriteRate   float64       `json:"disk_write_mbps,omitempty"`
+	Load1           float64       `json:"load_1"`
+	UptimeSeconds   float64       `json:"uptime_seconds"`
+	TemperatureC    float64       `json:"temperature_c,omitempty"`
+	NetworkReceived uint64        `json:"network_received_bytes"`
+	NetworkSent     uint64        `json:"network_sent_bytes"`
+	BatteryPercent  int           `json:"battery_percent,omitempty"`
+	BatteryStatus   string        `json:"battery_status,omitempty"`
+	GPU             string        `json:"gpu,omitempty"`
+	TopProcesses    []ProcessInfo `json:"top_processes,omitempty"`
+	HealthScore     int           `json:"health_score"`
 }
 
 func readCPUTimes() (cpuTimes, error) {
@@ -283,6 +297,229 @@ func detectGPU() string {
 	return strings.Join(unique, ", ")
 }
 
+func collectPerCoreCPU() []float64 {
+	type coreTime struct {
+		idle  uint64
+		total uint64
+	}
+	readCores := func() map[string]coreTime {
+		result := make(map[string]coreTime)
+		file, err := os.Open("/proc/stat")
+		if err != nil {
+			return result
+		}
+		defer file.Close()
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.HasPrefix(line, "cpu") || len(line) < 5 {
+				continue
+			}
+			if strings.HasPrefix(line, "cpu ") {
+				continue
+			}
+			fields := strings.Fields(line)
+			if len(fields) < 5 {
+				continue
+			}
+			var values []uint64
+			for _, f := range fields[1:] {
+				v, _ := strconv.ParseUint(f, 10, 64)
+				values = append(values, v)
+			}
+			if len(values) < 4 {
+				continue
+			}
+			var total uint64
+			for _, v := range values {
+				total += v
+			}
+			idle := values[3]
+			if len(values) > 4 {
+				idle += values[4]
+			}
+			result[fields[0]] = coreTime{idle: idle, total: total}
+		}
+		return result
+	}
+
+	first := readCores()
+	time.Sleep(200 * time.Millisecond)
+	second := readCores()
+
+	var perCore []float64
+	for core := 0; core < runtime.NumCPU(); core++ {
+		name := fmt.Sprintf("cpu%d", core)
+		f, ok1 := first[name]
+		s, ok2 := second[name]
+		if !ok1 || !ok2 {
+			perCore = append(perCore, -1)
+			continue
+		}
+		delta := s.total - f.total
+		if delta > 0 {
+			pct := 100 * float64(delta-(s.idle-f.idle)) / float64(delta)
+			perCore = append(perCore, pct)
+		} else {
+			perCore = append(perCore, 0)
+		}
+	}
+	return perCore
+}
+
+var prevDiskRead, prevDiskWrite uint64
+var prevDiskTime time.Time
+
+func readDiskIO() (float64, float64) {
+	file, err := os.Open("/proc/diskstats")
+	if err != nil {
+		return 0, 0
+	}
+	defer file.Close()
+	var reads, writes uint64
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 14 {
+			continue
+		}
+		r, _ := strconv.ParseUint(fields[5], 10, 64)
+		w, _ := strconv.ParseUint(fields[9], 10, 64)
+		reads += r
+		writes += w
+	}
+	now := time.Now()
+	var readRate, writeRate float64
+	if !prevDiskTime.IsZero() {
+		elapsed := now.Sub(prevDiskTime).Seconds()
+		if elapsed > 0 {
+			if reads >= prevDiskRead {
+				readRate = float64(reads-prevDiskRead) * 512 / elapsed / 1024 / 1024
+			}
+			if writes >= prevDiskWrite {
+				writeRate = float64(writes-prevDiskWrite) * 512 / elapsed / 1024 / 1024
+			}
+		}
+	}
+	prevDiskRead, prevDiskWrite = reads, writes
+	prevDiskTime = now
+	return readRate, writeRate
+}
+
+func readSwap() (uint64, uint64) {
+	mem := readKeyValues("/proc/meminfo")
+	return mem["MemTotal"] - mem["MemAvailable"], mem["SwapTotal"] - mem["SwapFree"]
+}
+
+func readTopProcesses() []ProcessInfo {
+	entries, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	type procSample struct {
+		pid   int
+		name  string
+		utime uint64
+		stime uint64
+		rss   uint64
+	}
+	var procs []procSample
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		pid, err := strconv.Atoi(entry.Name())
+		if err != nil || pid == 0 {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join("/proc", entry.Name(), "stat"))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		closeParen := strings.LastIndex(content, ")")
+		if closeParen < 0 {
+			continue
+		}
+		fields := strings.Fields(content[closeParen+2:])
+		if len(fields) < 20 {
+			continue
+		}
+		utime, _ := strconv.ParseUint(fields[11], 10, 64)
+		stime, _ := strconv.ParseUint(fields[12], 10, 64)
+		rss, _ := strconv.ParseUint(fields[21], 10, 64)
+		name := strings.Trim(content[strings.Index(content, "(")+1:closeParen], " ")
+		procs = append(procs, procSample{pid: pid, name: name, utime: utime, stime: stime, rss: rss * uint64(os.Getpagesize())})
+	}
+	time.Sleep(100 * time.Millisecond)
+
+	var results []ProcessInfo
+	for _, p := range procs {
+		data, err := os.ReadFile(filepath.Join("/proc", strconv.Itoa(p.pid), "stat"))
+		if err != nil {
+			continue
+		}
+		content := string(data)
+		closeParen := strings.LastIndex(content, ")")
+		if closeParen < 0 {
+			continue
+		}
+		fields := strings.Fields(content[closeParen+2:])
+		if len(fields) < 20 {
+			continue
+		}
+		utime2, _ := strconv.ParseUint(fields[11], 10, 64)
+		stime2, _ := strconv.ParseUint(fields[12], 10, 64)
+		cpuDelta := (utime2 - p.utime) + (stime2 - p.stime)
+		if cpuDelta < 2 {
+			continue
+		}
+		cpuPct := float64(cpuDelta) / 10.0
+		results = append(results, ProcessInfo{
+			PID: p.pid, Name: p.name, CPUPercent: cpuPct, MemoryBytes: p.rss,
+		})
+	}
+
+	sort.Slice(results, func(i, j int) bool { return results[i].CPUPercent > results[j].CPUPercent })
+	if len(results) > 5 {
+		results = results[:5]
+	}
+	return results
+}
+
+func computeHealthScore(s statusSnapshot) int {
+	score := 100
+	if s.CPUPercent > 90 {
+		score -= 25
+	} else if s.CPUPercent > 70 {
+		score -= 10
+	}
+	memPct := float64(s.MemoryUsed) / float64(s.MemoryTotal) * 100
+	if memPct > 95 {
+		score -= 25
+	} else if memPct > 80 {
+		score -= 10
+	}
+	diskPct := float64(s.DiskUsed) / float64(s.DiskTotal) * 100
+	if diskPct > 95 {
+		score -= 25
+	} else if diskPct > 80 {
+		score -= 10
+	}
+	if s.TemperatureC >= 90 {
+		score -= 20
+	} else if s.TemperatureC >= 70 {
+		score -= 5
+	}
+	if s.BatteryPercent > 0 && s.BatteryPercent < 10 && s.BatteryStatus != "Charging" {
+		score -= 15
+	}
+	if score < 0 {
+		score = 0
+	}
+	return score
+}
+
 func collectStatus() (statusSnapshot, error) {
 	first, err := readCPUTimes()
 	if err != nil {
@@ -320,16 +557,26 @@ func collectStatus() (statusSnapshot, error) {
 	freeDisk := stat.Bavail * uint64(stat.Bsize)
 	totalMemory := mem["MemTotal"]
 	availableMemory := mem["MemAvailable"]
+	swapTotal := mem["SwapTotal"]
+	swapFree := mem["SwapFree"]
 	batteryPercent, batteryStatus := readBattery()
 	gpu := detectGPU()
-	return statusSnapshot{
+	diskRead, diskWrite := readDiskIO()
+	perCore := collectPerCoreCPU()
+	snap := statusSnapshot{
 		Timestamp: time.Now().Format(time.RFC3339), Hostname: hostname,
 		Kernel: strings.TrimSpace(string(kernelBytes)), CPUPercent: cpuPercent, CPUCores: runtime.NumCPU(),
+		PerCoreCPU: perCore,
 		MemoryUsed: totalMemory - availableMemory, MemoryTotal: totalMemory,
-		DiskUsed: totalDisk - freeDisk, DiskTotal: totalDisk, Load1: load, UptimeSeconds: uptime,
+		SwapUsed: swapTotal - swapFree, SwapTotal: swapTotal,
+		DiskUsed: totalDisk - freeDisk, DiskTotal: totalDisk,
+		DiskReadRate: diskRead, DiskWriteRate: diskWrite,
+		Load1: load, UptimeSeconds: uptime,
 		TemperatureC: firstTemperature(), NetworkReceived: rx, NetworkSent: tx,
 		BatteryPercent: batteryPercent, BatteryStatus: batteryStatus, GPU: gpu,
-	}, nil
+	}
+	snap.HealthScore = computeHealthScore(snap)
+	return snap, nil
 }
 
 func (a *app) runStatus(args []string) error {
@@ -361,9 +608,18 @@ func (a *app) runStatus(args []string) error {
 		return encoder.Encode(snapshot)
 	}
 	fmt.Fprintf(a.out, "Raid status  %s  Linux %s\n", snapshot.Hostname, snapshot.Kernel)
+	fmt.Fprintf(a.out, "Health   %d/100\n", snapshot.HealthScore)
 	fmt.Fprintf(a.out, "CPU      %5.1f%%  %d cores  load %.2f\n", snapshot.CPUPercent, snapshot.CPUCores, snapshot.Load1)
-	fmt.Fprintf(a.out, "Memory   %s / %s\n", formatBytes(int64(snapshot.MemoryUsed)), formatBytes(int64(snapshot.MemoryTotal)))
-	fmt.Fprintf(a.out, "Disk     %s / %s\n", formatBytes(int64(snapshot.DiskUsed)), formatBytes(int64(snapshot.DiskTotal)))
+	fmt.Fprintf(a.out, "Memory   %s / %s", formatBytes(int64(snapshot.MemoryUsed)), formatBytes(int64(snapshot.MemoryTotal)))
+	if snapshot.SwapTotal > 0 {
+		fmt.Fprintf(a.out, "  (swap %s / %s)", formatBytes(int64(snapshot.SwapUsed)), formatBytes(int64(snapshot.SwapTotal)))
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "Disk     %s / %s", formatBytes(int64(snapshot.DiskUsed)), formatBytes(int64(snapshot.DiskTotal)))
+	if snapshot.DiskReadRate > 0 || snapshot.DiskWriteRate > 0 {
+		fmt.Fprintf(a.out, "  (R %.1f MB/s  W %.1f MB/s)", snapshot.DiskReadRate, snapshot.DiskWriteRate)
+	}
+	fmt.Fprintln(a.out)
 	fmt.Fprintf(a.out, "Network  RX %s  TX %s\n", formatBytes(int64(snapshot.NetworkReceived)), formatBytes(int64(snapshot.NetworkSent)))
 	fmt.Fprintf(a.out, "Uptime   %s\n", (time.Duration(snapshot.UptimeSeconds) * time.Second).Round(time.Minute))
 	if snapshot.TemperatureC > 0 {
@@ -374,6 +630,12 @@ func (a *app) runStatus(args []string) error {
 	}
 	if snapshot.GPU != "" {
 		fmt.Fprintf(a.out, "GPU      %s\n", snapshot.GPU)
+	}
+	if len(snapshot.TopProcesses) > 0 {
+		fmt.Fprintln(a.out, "Processes")
+		for _, p := range snapshot.TopProcesses[:minInt(3, len(snapshot.TopProcesses))] {
+			fmt.Fprintf(a.out, "  %5.1f%%  %s (%d)\n", p.CPUPercent, p.Name, p.PID)
+		}
 	}
 	return nil
 }

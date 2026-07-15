@@ -2,7 +2,7 @@ package raid
 
 import (
 	"fmt"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
@@ -73,7 +73,7 @@ func ratio(used, total uint64) float64 {
 	return 100 * float64(used) / float64(total)
 }
 
-func meterBar(percent float64, width int) string {
+func progressBar(percent float64, width int) string {
 	if width < 8 {
 		width = 8
 	}
@@ -101,52 +101,214 @@ func meterBar(percent float64, width int) string {
 	return barStyle.Render(strings.Repeat("█", filled)) + mutedStyle.Render(strings.Repeat("░", width-filled))
 }
 
-func statusCard(title, value, detail string, percent float64, width int) string {
-	innerWidth := maxInt(20, width-8)
-	var valueStyle lipgloss.Style
+func scoreStyle(score int) lipgloss.Style {
 	switch {
-	case percent >= 90:
-		valueStyle = lipgloss.NewStyle().Bold(true).Foreground(colorDanger)
-	case percent >= 70:
-		valueStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F0C040"))
+	case score >= 80:
+		return lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
+	case score >= 50:
+		return lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#F0C040"))
 	default:
-		valueStyle = lipgloss.NewStyle().Bold(true).Foreground(colorGreen)
+		return dangerStyle
 	}
-
-	body := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#C0D0E0")).Render(strings.ToUpper(title))
-	body += "\n"
-	body += valueStyle.Render(value)
-	body += "\n"
-	body += meterBar(percent, maxInt(10, innerWidth-2))
-	body += "\n"
-	body += mutedStyle.Render(detail)
-	return panelStyle.Width(innerWidth).Render(body)
 }
 
-func statusDiagnosis(snapshot statusSnapshot) string {
-	memory := ratio(snapshot.MemoryUsed, snapshot.MemoryTotal)
-	disk := ratio(snapshot.DiskUsed, snapshot.DiskTotal)
+func renderCPUCard(s statusSnapshot, width int) string {
+	icon := "◉ CPU"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
 
-	pill := func(text string, bg lipgloss.Color) string {
-		return lipgloss.NewStyle().Bold(true).Padding(0, 2).Background(bg).Foreground(lipgloss.Color("#FFFFFF")).Render(text)
+	var lines []string
+	lines = append(lines, titleText)
+
+	bar := progressBar(s.CPUPercent, 16)
+	pctColor := lipgloss.NewStyle().Foreground(colorGreen)
+	if s.CPUPercent > 70 {
+		pctColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
+	}
+	if s.CPUPercent > 90 {
+		pctColor = dangerStyle
+	}
+	pctText := pctColor.Render(fmt.Sprintf("%5.1f%%", s.CPUPercent))
+	tempText := ""
+	if s.TemperatureC > 0 {
+		tempStyle := lipgloss.NewStyle().Foreground(colorGreen)
+		if s.TemperatureC >= 80 {
+			tempStyle = dangerStyle
+		} else if s.TemperatureC >= 60 {
+			tempStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
+		}
+		tempText = fmt.Sprintf(" @ %s°C", tempStyle.Render(fmt.Sprintf("%.1f", s.TemperatureC)))
+	}
+	lines = append(lines, fmt.Sprintf("Total  %s  %s%s", bar, pctText, tempText))
+
+	if len(s.PerCoreCPU) > 0 {
+		type corePct struct {
+			idx int
+			val float64
+		}
+		var cores []corePct
+		for i, v := range s.PerCoreCPU {
+			if v >= 0 {
+				cores = append(cores, corePct{i, v})
+			}
+		}
+		sort.Slice(cores, func(i, j int) bool { return cores[i].val > cores[j].val })
+		show := minInt(len(cores), 2)
+		for i := 0; i < show; i++ {
+			c := cores[i]
+			cb := progressBar(c.val, 16)
+			lines = append(lines, fmt.Sprintf("Core%-2d %s  %5.1f%%", c.idx+1, cb, c.val))
+		}
 	}
 
-	switch {
-	case snapshot.TemperatureC >= 90:
-		return pill(" THERMAL WARNING "+strconv.Itoa(int(snapshot.TemperatureC))+"°C ", colorDanger)
-	case disk >= 95:
-		return pill(" DISK CRITICAL ", colorDanger)
-	case memory >= 95:
-		return pill(" MEMORY CRITICAL ", colorDanger)
-	case snapshot.CPUPercent >= 95:
-		return pill(" CPU PRESSURE ", colorDanger)
-	case disk >= 80:
-		return pill(" DISK LOW ", lipgloss.Color("#F0C040"))
-	case memory >= 80:
-		return pill(" MEMORY LOW ", lipgloss.Color("#F0C040"))
-	default:
-		return lipgloss.NewStyle().Bold(true).Padding(0, 2).Background(lipgloss.Color("#1A3A1A")).Foreground(colorGreen).Render(" SYSTEM NOMINAL ")
+	loadColor := mutedStyle
+	if s.Load1 > float64(s.CPUCores) {
+		loadColor = dangerStyle
+	} else if s.Load1 > float64(s.CPUCores)*0.8 {
+		loadColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
 	}
+	lines = append(lines, loadColor.Render(fmt.Sprintf("Load   %.2f, %d cores", s.Load1, s.CPUCores)))
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
+}
+
+func renderMemoryCard(s statusSnapshot, width int) string {
+	icon := "◫ Memory"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
+
+	var lines []string
+	lines = append(lines, titleText)
+
+	memPct := ratio(s.MemoryUsed, s.MemoryTotal)
+	bar := progressBar(memPct, 16)
+	lines = append(lines, fmt.Sprintf("Used   %s  %5.1f%%", bar, memPct))
+	lines = append(lines, fmt.Sprintf("Total  %s / %s", formatBytes(int64(s.MemoryUsed)), formatBytes(int64(s.MemoryTotal))))
+
+	if s.SwapTotal > 0 {
+		swapPct := ratio(s.SwapUsed, s.SwapTotal)
+		swapBar := progressBar(swapPct, 16)
+		swapLine := fmt.Sprintf("Swap   %s  %5.1f%%  %s/%s",
+			swapBar, swapPct, formatBytes(int64(s.SwapUsed)), formatBytes(int64(s.SwapTotal)))
+		lines = append(lines, swapLine)
+	}
+
+	avail := s.MemoryTotal - s.MemoryUsed
+	lines = append(lines, mutedStyle.Render(fmt.Sprintf("Avail  %s", formatBytes(int64(avail)))))
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
+}
+
+func renderDiskCard(s statusSnapshot, width int) string {
+	icon := "▥ Disk"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
+
+	var lines []string
+	lines = append(lines, titleText)
+
+	diskPct := ratio(s.DiskUsed, s.DiskTotal)
+	bar := progressBar(diskPct, 16)
+	lines = append(lines, fmt.Sprintf("Used   %s  %5.1f%%", bar, diskPct))
+	lines = append(lines, fmt.Sprintf("Total  %s / %s", formatBytes(int64(s.DiskUsed)), formatBytes(int64(s.DiskTotal))))
+
+	if s.DiskReadRate > 0 || s.DiskWriteRate > 0 {
+		ioLine := fmt.Sprintf("I/O    R %.1f  W %.1f MB/s", s.DiskReadRate, s.DiskWriteRate)
+		lines = append(lines, mutedStyle.Render(ioLine))
+	}
+
+	free := s.DiskTotal - s.DiskUsed
+	lines = append(lines, mutedStyle.Render(fmt.Sprintf("Free   %s", formatBytes(int64(free)))))
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
+}
+
+func renderNetworkCard(s statusSnapshot, width int) string {
+	icon := "⇅ Network"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
+
+	var lines []string
+	lines = append(lines, titleText)
+
+	lines = append(lines, fmt.Sprintf("Down   %s", formatBytes(int64(s.NetworkReceived))))
+	lines = append(lines, fmt.Sprintf("Up     %s", formatBytes(int64(s.NetworkSent))))
+
+	if s.TemperatureC > 0 {
+		tempColor := lipgloss.NewStyle().Foreground(colorGreen)
+		if s.TemperatureC >= 80 {
+			tempColor = dangerStyle
+		} else if s.TemperatureC >= 60 {
+			tempColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
+		}
+		lines = append(lines, tempColor.Render(fmt.Sprintf("Thermal %.1f °C", s.TemperatureC)))
+	}
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
+}
+
+func renderProcessCard(s statusSnapshot, width int) string {
+	if len(s.TopProcesses) == 0 {
+		return ""
+	}
+	icon := "❊ Processes"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
+
+	var lines []string
+	lines = append(lines, titleText)
+
+	for i, p := range s.TopProcesses[:minInt(3, len(s.TopProcesses))] {
+		bar := progressBar(p.CPUPercent, 12)
+		name := p.Name
+		if len(name) > 14 {
+			name = name[:13] + "…"
+		}
+		memText := ""
+		if p.MemoryBytes > 0 {
+			memText = "  " + formatBytes(int64(p.MemoryBytes))
+		}
+		lines = append(lines, fmt.Sprintf("#%-5d %s  %5.1f%%  %s%s", i+1, bar, p.CPUPercent, name, memText))
+	}
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
+}
+
+func renderBatteryCard(s statusSnapshot, width int) string {
+	if s.BatteryPercent <= 0 {
+		return ""
+	}
+	icon := "◪ Battery"
+	titleText := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render(icon)
+	headerLen := maxInt(width-lipgloss.Width(icon)-2, 0)
+	titleText += "  " + mutedStyle.Render(strings.Repeat("╌", headerLen))
+
+	var lines []string
+	lines = append(lines, titleText)
+
+	pct := float64(s.BatteryPercent)
+	bar := progressBar(pct, 16)
+	batteryColor := lipgloss.NewStyle().Foreground(colorGreen)
+	if pct < 20 {
+		batteryColor = dangerStyle
+	} else if pct < 50 {
+		batteryColor = lipgloss.NewStyle().Foreground(lipgloss.Color("#F0C040"))
+	}
+	lines = append(lines, fmt.Sprintf("Level  %s  %s", bar, batteryColor.Render(fmt.Sprintf("%5.1f%%", pct))))
+	lines = append(lines, fmt.Sprintf("Status %s", s.BatteryStatus))
+
+	w := maxInt(28, width-4)
+	return panelStyle.Width(w).Render(strings.Join(lines, "\n"))
 }
 
 func (m statusModel) View() string {
@@ -161,49 +323,56 @@ func (m statusModel) View() string {
 	}
 
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorLime).Background(lipgloss.Color("#1A2A10")).Padding(0, 1).Render(" RAID // LIVE STATUS ")
-	hostInfo := "  " + mutedStyle.Render(m.snapshot.Hostname+"  Linux "+m.snapshot.Kernel)
-	diagnosis := statusDiagnosis(m.snapshot)
+	hostInfo := mutedStyle.Render("  " + m.snapshot.Hostname + "  Linux " + m.snapshot.Kernel)
+	scoreText := scoreStyle(m.snapshot.HealthScore).Render(fmt.Sprintf(" ● %d", m.snapshot.HealthScore))
+	healthLabel := mutedStyle.Render("  Health") + scoreText
+	topLine := lipgloss.JoinHorizontal(lipgloss.Left, header, hostInfo, healthLabel)
 
-	memoryPercent := ratio(m.snapshot.MemoryUsed, m.snapshot.MemoryTotal)
-	diskPercent := ratio(m.snapshot.DiskUsed, m.snapshot.DiskTotal)
-	cardWidth := minInt(42, maxInt(28, (m.width-8)/2))
+	cardWidth := maxInt(28, minInt(48, (m.width-8)/2))
 
-	cpu := statusCard("CPU", fmt.Sprintf("%5.1f%%", m.snapshot.CPUPercent), fmt.Sprintf("%d cores  load %.2f", m.snapshot.CPUCores, m.snapshot.Load1), m.snapshot.CPUPercent, cardWidth)
-	memory := statusCard("Memory", fmt.Sprintf("%5.1f%%", memoryPercent), fmt.Sprintf("%s / %s", formatBytes(int64(m.snapshot.MemoryUsed)), formatBytes(int64(m.snapshot.MemoryTotal))), memoryPercent, cardWidth)
-	disk := statusCard("Disk", fmt.Sprintf("%5.1f%%", diskPercent), fmt.Sprintf("%s / %s", formatBytes(int64(m.snapshot.DiskUsed)), formatBytes(int64(m.snapshot.DiskTotal))), diskPercent, cardWidth)
-
-	netThermLabel := "Network"
-	netThermValue := fmt.Sprintf("RX %s", formatBytes(int64(m.snapshot.NetworkReceived)))
-	netThermDetail := fmt.Sprintf("TX %s", formatBytes(int64(m.snapshot.NetworkSent)))
-	netThermPct := 0.0
-	if m.snapshot.TemperatureC > 0 {
-		netThermLabel = "Network / Thermal"
-		netThermValue = fmt.Sprintf("%.1f °C", m.snapshot.TemperatureC)
-		netThermDetail = fmt.Sprintf("RX %s  TX %s", formatBytes(int64(m.snapshot.NetworkReceived)), formatBytes(int64(m.snapshot.NetworkSent)))
-		netThermPct = m.snapshot.TemperatureC
+	var cards []string
+	cards = append(cards, renderCPUCard(m.snapshot, cardWidth))
+	cards = append(cards, renderMemoryCard(m.snapshot, cardWidth))
+	cards = append(cards, renderDiskCard(m.snapshot, cardWidth))
+	cards = append(cards, renderNetworkCard(m.snapshot, cardWidth))
+	if procCard := renderProcessCard(m.snapshot, cardWidth); procCard != "" {
+		cards = append(cards, procCard)
 	}
-	network := statusCard(netThermLabel, netThermValue, netThermDetail, netThermPct, cardWidth)
+	if batCard := renderBatteryCard(m.snapshot, cardWidth); batCard != "" {
+		cards = append(cards, batCard)
+	}
 
-	var cards string
+	var cardLayout string
 	if m.width >= 78 {
-		rowOne := lipgloss.JoinHorizontal(lipgloss.Top, cpu, "  ", memory)
-		rowTwo := lipgloss.JoinHorizontal(lipgloss.Top, disk, "  ", network)
-		cards = lipgloss.JoinVertical(lipgloss.Left, rowOne, rowTwo)
+		for i := 0; i < len(cards); i += 2 {
+			left := cards[i]
+			right := ""
+			if i+1 < len(cards) {
+				right = cards[i+1]
+			}
+			row := lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+			if i > 0 {
+				cardLayout += "\n"
+			}
+			cardLayout += row
+		}
 	} else {
-		cards = lipgloss.JoinVertical(lipgloss.Left, cpu, memory, disk, network)
+		for i, c := range cards {
+			if i > 0 {
+				cardLayout += "\n"
+			}
+			cardLayout += c
+		}
 	}
 
 	uptime := (time.Duration(m.snapshot.UptimeSeconds) * time.Second).Round(time.Minute).String()
 	footer := mutedStyle.Render(fmt.Sprintf("Uptime %s", uptime))
-	if m.snapshot.BatteryPercent > 0 {
-		footer = mutedStyle.Render(fmt.Sprintf("Battery %d%% %s", m.snapshot.BatteryPercent, m.snapshot.BatteryStatus)) + "  " + footer
-	}
 	if m.snapshot.GPU != "" {
 		footer = mutedStyle.Render("GPU: "+m.snapshot.GPU) + "  " + footer
 	}
 	footer += "  " + mutedStyle.Render("r refresh  Esc/q back")
 
-	content := lipgloss.JoinVertical(lipgloss.Left, header+hostInfo, "", diagnosis, "", cards, "", footer)
+	content := lipgloss.JoinVertical(lipgloss.Left, topLine, "", cardLayout, "", footer)
 	return lipgloss.NewStyle().Padding(1, 2).Render(content)
 }
 
