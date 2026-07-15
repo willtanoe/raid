@@ -31,6 +31,10 @@ Raid combines an interactive TUI with scriptable text and JSON output. Built on 
 - **Preview-first safety** — every destructive command shows an exact plan; mutations require `--yes`
 - **Operation audit** — all actions logged to `~/.local/state/raid/operations.tsv` with filtering
 
+<p align="center">
+  <img src="assets/raid_screenshot.png" alt="Raid TUI" width="700" />
+</p>
+
 ## Installation
 
 ### Download binary (no Go required)
