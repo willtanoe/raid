@@ -494,17 +494,21 @@ func computeHealthScore(s statusSnapshot) int {
 	} else if s.CPUPercent > 70 {
 		score -= 10
 	}
-	memPct := float64(s.MemoryUsed) / float64(s.MemoryTotal) * 100
-	if memPct > 95 {
-		score -= 25
-	} else if memPct > 80 {
-		score -= 10
+	if s.MemoryTotal > 0 {
+		memPct := float64(s.MemoryUsed) / float64(s.MemoryTotal) * 100
+		if memPct > 95 {
+			score -= 25
+		} else if memPct > 80 {
+			score -= 10
+		}
 	}
-	diskPct := float64(s.DiskUsed) / float64(s.DiskTotal) * 100
-	if diskPct > 95 {
-		score -= 25
-	} else if diskPct > 80 {
-		score -= 10
+	if s.DiskTotal > 0 {
+		diskPct := float64(s.DiskUsed) / float64(s.DiskTotal) * 100
+		if diskPct > 95 {
+			score -= 25
+		} else if diskPct > 80 {
+			score -= 10
+		}
 	}
 	if s.TemperatureC >= 90 {
 		score -= 20

@@ -1,7 +1,7 @@
 .PHONY: build test test-race check clean install uninstall
 
 PREFIX ?= /usr/local
-VERSION ?= 0.2.1
+VERSION ?= 0.2.2
 GO ?= go
 GOFMT ?= gofmt
 LDFLAGS := -s -w -X github.com/willtanoe/raid/internal/raid.Version=$(VERSION)

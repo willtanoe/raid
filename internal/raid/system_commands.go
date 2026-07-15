@@ -105,7 +105,7 @@ func (a *app) runUninstall(args []string) error {
 		for _, match := range matches {
 			managers = append(managers, match.manager)
 		}
-		return fmt.Errorf("package exists in multiple managers (%s); use its exact application ID", strings.Join(managers, ", "))
+		return fmt.Errorf("package exists in multiple managers (%s); specify the manager: raid uninstall %s/<package> or use the exact package name", strings.Join(managers, ", "), managers[0])
 	}
 	match := matches[0]
 	fmt.Fprintf(a.out, "Uninstall plan: %s package %s\n", match.manager, match.name)
@@ -143,7 +143,7 @@ func (a *app) runOptimize(args []string) error {
 		{label: "Clean DNF package cache", command: []string{"sudo", "-n", "dnf", "clean", "all"}, needs: "dnf"},
 		{label: "Remove unused DNF packages", command: []string{"sudo", "-n", "dnf", "autoremove", "-y"}, needs: "dnf"},
 		{label: "Clean Pacman package cache", command: []string{"sudo", "-n", "pacman", "-Sc", "--noconfirm"}, needs: "pacman"},
-		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
+		{label: "Refresh Snap packages", command: []string{"snap", "refresh"}, needs: "snap"},
 	}
 	var available []maintenanceAction
 	for _, action := range actions {
@@ -230,7 +230,7 @@ func (a *app) runUpdate(args []string) error {
 		{label: "Upgrade APT packages", command: []string{"sudo", "-n", "apt-get", "upgrade", "-y"}, needs: "apt-get"},
 		{label: "Upgrade DNF packages", command: []string{"sudo", "-n", "dnf", "upgrade", "-y"}, needs: "dnf"},
 		{label: "Upgrade Pacman packages", command: []string{"sudo", "-n", "pacman", "-Syu", "--noconfirm"}, needs: "pacman"},
-		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
+		{label: "Refresh Snap packages", command: []string{"snap", "refresh"}, needs: "snap"},
 	}
 
 	if commandExists("flatpak") {
