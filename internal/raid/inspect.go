@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -250,39 +249,6 @@ func readBattery() (int, string) {
 }
 
 func detectGPU() string {
-	if !commandExists("lspci") {
-		return readGPUFromDRM()
-	}
-	cmd := exec.Command("lspci")
-	output, err := cmd.Output()
-	if err != nil {
-		return readGPUFromDRM()
-	}
-	var lines []string
-	for _, line := range strings.Split(string(output), "\n") {
-		lower := strings.ToLower(line)
-		if strings.Contains(lower, "vga") || strings.Contains(lower, "3d") || strings.Contains(lower, "display") {
-			parts := strings.SplitN(line, " ", 3)
-			if len(parts) >= 3 {
-				lines = append(lines, strings.TrimSpace(parts[2]))
-			}
-		}
-	}
-	if len(lines) > 0 {
-		seen := make(map[string]bool)
-		var unique []string
-		for _, name := range lines {
-			if !seen[name] {
-				seen[name] = true
-				unique = append(unique, name)
-			}
-		}
-		return strings.Join(unique, "; ")
-	}
-	return readGPUFromDRM()
-}
-
-func readGPUFromDRM() string {
 	entries, err := os.ReadDir("/sys/class/drm")
 	if err != nil {
 		return ""

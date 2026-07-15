@@ -252,6 +252,10 @@ func TestRunDockerNotInstalled(t *testing.T) {
 	var output bytes.Buffer
 	a.out = &output
 
+	if commandExists("docker") {
+		t.Skip("docker is installed; skipping docker-absence test")
+	}
+
 	if err := a.runDocker(nil); err == nil {
 		t.Fatal("expected error when docker is not installed")
 	}
