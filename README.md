@@ -4,6 +4,10 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](go.mod)
 
+<p align="center">
+  <img src="assets/raid_banner.png" alt="Raid" width="800" />
+</p>
+
 > **A safety-first terminal toolkit for Linux maintenance and shell workflow.**
 
 Raid combines an interactive TUI with scriptable text and JSON output. Built on native Linux facilities — procfs, sysfs, systemd, journald, APT/dpkg, DNF, Pacman, Snap, Flatpak, Docker, and the FreeDesktop Trash specification.
