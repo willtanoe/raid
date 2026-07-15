@@ -118,7 +118,7 @@ func (m mainMenuModel) View() string {
 	var body strings.Builder
 	body.WriteString(titleStyle.Render("RAID // LINUX TOOLKIT by github.com/willtanoe"))
 	body.WriteString("\n")
-	body.WriteString(mutedStyle.Render("Safe cleanup. Exact plans. No background daemon."))
+	body.WriteString(mutedStyle.Render("v" + Version + "  ·  Safe cleanup. Exact plans. No background daemon."))
 	body.WriteString("\n\n")
 	for index, item := range mainMenuItems {
 		label := fmt.Sprintf("%-11s", item.name)

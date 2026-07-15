@@ -319,7 +319,7 @@ func (m statusModel) View() string {
 		return panelStyle.Render(dangerStyle.Render("Status collection failed") + "\n" + m.err.Error() + "\n\nEsc/q back  r retry")
 	}
 	if m.snapshot.Timestamp == "" {
-		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, titleStyle.Render("RAID // COLLECTING SYSTEM SIGNALS..."))
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, titleStyle.Render("RAID // LIVE STATUS  v"+Version))
 	}
 
 	header := lipgloss.NewStyle().Bold(true).Foreground(colorLime).Background(lipgloss.Color("#1A2A10")).Padding(0, 1).Render(" RAID // LIVE STATUS ")

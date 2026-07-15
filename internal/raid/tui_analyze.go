@@ -203,7 +203,7 @@ func (m analyzeModel) View() string {
 	}
 	var body strings.Builder
 
-	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render("Analyze Disk")
+	header := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#BD93F9")).Render("Analyze Disk  v" + Version)
 	body.WriteString(header)
 	body.WriteString("\n")
 	pathDisplay := mutedStyle.Render(truncateMiddle(m.path, maxInt(30, m.width-8)))
