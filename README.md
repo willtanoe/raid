@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.24%2B-00ADD8?logo=go)](go.mod)
 
-Raid is a safety-first terminal maintenance toolkit for Ubuntu. It combines an interactive TUI with scriptable text and JSON output, using native Linux facilities such as APT/dpkg, Snap, Flatpak, systemd, journald, procfs, sysfs, and the FreeDesktop Trash specification.
+Raid is a safety-first terminal toolkit for Linux. It combines an interactive TUI with scriptable text and JSON output, using native Linux facilities such as APT/dpkg, Snap, Flatpak, systemd, journald, procfs, sysfs, and the FreeDesktop Trash specification.
 
 > [!IMPORTANT]
 > Raid is experimental software. Always review the displayed plan before running a command with `--yes`.

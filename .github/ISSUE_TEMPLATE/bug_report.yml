@@ -15,9 +15,9 @@ body:
     validations:
       required: true
   - type: input
-    id: ubuntu
+    id: platform
     attributes:
-      label: Ubuntu and kernel version
+      label: Linux distribution and kernel version
       placeholder: Ubuntu 24.04, Linux 6.8.0
     validations:
       required: true

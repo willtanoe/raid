@@ -11,7 +11,7 @@ Please use GitHub's private vulnerability reporting feature for this repository.
 Useful reports include:
 
 - the Raid version from `raid version`;
-- the Ubuntu version and kernel;
+- the Linux distribution, version, and kernel;
 - the exact command and flags used;
 - whether the operation was a preview, Trash move, permanent removal, or privileged package action;
 - a minimal reproduction using temporary files when possible.

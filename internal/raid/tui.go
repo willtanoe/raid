@@ -37,7 +37,7 @@ type menuItem struct {
 var mainMenuItems = []menuItem{
 	{name: "Clean", description: "Preview rebuildable user and developer caches", command: []string{"clean"}},
 	{name: "Uninstall", description: "Remove an exact APT, Snap, or Flatpak package", command: []string{"uninstall"}},
-	{name: "Optimize", description: "Preview bounded Ubuntu maintenance tasks", command: []string{"optimize"}},
+	{name: "Optimize", description: "Preview bounded Linux maintenance tasks", command: []string{"optimize"}},
 	{name: "Analyze", description: "Explore disk usage and move selected entries to Trash", command: []string{"analyze"}},
 	{name: "Status", description: "Watch CPU, memory, disk, network, and thermal health", command: []string{"status"}},
 	{name: "Purge", description: "Preview rebuildable artifacts in the current project", command: []string{"purge"}},
@@ -45,6 +45,7 @@ var mainMenuItems = []menuItem{
 	{name: "Update", description: "Check and apply APT, Snap, and Flatpak updates", command: []string{"update"}},
 	{name: "Docker", description: "Preview and clean unused Docker containers and images", command: []string{"docker"}},
 	{name: "Search", description: "Find large or old files by size, age, or pattern", command: []string{"search"}},
+	{name: "Convert", description: "Convert shell history between zsh, fish, and bash formats", command: []string{"convert"}},
 	{name: "History", description: "Read the local operation audit log", command: []string{"history"}},
 }
 
@@ -115,7 +116,7 @@ func (m mainMenuModel) View() string {
 	}
 	contentWidth := minInt(72, maxInt(42, m.width-8))
 	var body strings.Builder
-	body.WriteString(titleStyle.Render("RAID // UBUNTU MAINTENANCE"))
+	body.WriteString(titleStyle.Render("RAID // LINUX TOOLKIT"))
 	body.WriteString("\n")
 	body.WriteString(mutedStyle.Render("Safe cleanup. Exact plans. No background daemon."))
 	body.WriteString("\n\n")

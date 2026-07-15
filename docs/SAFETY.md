@@ -57,6 +57,6 @@ Privileged package operations use `sudo -n`. This requires a previously authoriz
 - The Trash implementation currently targets the user's home Trash and refuses cross-filesystem moves instead of selecting a per-volume Trash directory.
 - Path validation narrows time-of-check/time-of-use races but does not yet use Linux `openat2` directory-file-descriptor enforcement.
 - Cleanup targets are intentionally conservative and do not attempt broad orphan discovery.
-- Raid currently targets Ubuntu and has not been validated as a general cross-distribution maintenance tool.
+- Raid primarily targets Linux with systemd/procfs/sysfs and has not been validated on non-Linux platforms.
 
 Security-sensitive changes should include regression tests and receive explicit review of every destructive branch.

@@ -100,6 +100,8 @@ func (a *app) run(args []string) error {
 		return a.runDocker(args)
 	case "search":
 		return a.runSearch(args)
+	case "convert":
+		return a.runConvert(args)
 	default:
 		return fmt.Errorf("unknown command %q; run 'raid help'", command)
 	}
@@ -136,7 +138,7 @@ func isFullScreenCommand(command string) bool {
 }
 
 func (a *app) printHelp() {
-	fmt.Fprintln(a.out, `Raid - safe Ubuntu cleanup and maintenance
+	fmt.Fprintln(a.out, `Raid - safe Linux cleanup and maintenance
 
 Usage:
   raid <command> [options]
@@ -144,7 +146,7 @@ Usage:
 Commands:
   clean        Clean conservative user and developer caches
   uninstall    Uninstall an APT, Snap, or Flatpak package
-  optimize     Run bounded Ubuntu maintenance tasks
+  optimize     Run bounded Linux maintenance tasks
   analyze      Analyze disk usage for a directory
   status       Show a compact system health snapshot
   purge        Remove rebuildable project artifacts
@@ -152,6 +154,7 @@ Commands:
   update       Check and apply APT, Snap, and Flatpak updates
   docker       Clean unused Docker containers, images, and volumes
   search       Find files by size, age, or name pattern
+  convert      Convert shell history between zsh, fish, and bash formats
   history      Show Raid operation history
   completion   Generate shell completion
   fingerprint  Inspect or enroll Linux fingerprint support

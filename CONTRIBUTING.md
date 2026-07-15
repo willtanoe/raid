@@ -6,7 +6,7 @@ Thank you for helping improve Raid. Because Raid performs cleanup and package ma
 
 Requirements:
 
-- Ubuntu or another Linux environment with procfs
+- A Linux environment with procfs and sysfs
 - Go 1.24 or newer
 - GNU Make
 

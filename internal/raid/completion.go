@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-var raidCommands = "clean uninstall optimize analyze status purge installer update docker search history completion fingerprint version help"
+var raidCommands = "clean uninstall optimize analyze status purge installer update docker search convert history completion fingerprint version help"
 
 func (a *app) runCompletion(args []string) error {
 	if len(args) != 1 {
@@ -38,7 +38,7 @@ _raid
 `, raidCommands)
 	case "fish":
 		fmt.Fprintf(a.out, "complete -c raid -f\n")
-		for _, command := range []string{"clean", "uninstall", "optimize", "analyze", "status", "purge", "installer", "history", "completion", "fingerprint", "version", "help"} {
+		for _, command := range []string{"clean", "uninstall", "optimize", "analyze", "status", "purge", "installer", "update", "docker", "search", "convert", "history", "completion", "fingerprint", "version", "help"} {
 			fmt.Fprintf(a.out, "complete -c raid -n '__fish_use_subcommand' -a %s\n", command)
 		}
 	default:
