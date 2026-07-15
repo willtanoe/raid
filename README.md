@@ -34,19 +34,20 @@ Raid combines an interactive TUI with scriptable text and JSON output. Built on 
 Download the latest pre-built binary from the [releases page](https://github.com/willtanoe/raid/releases/latest):
 
 ```bash
+# x86_64 / amd64
 curl -L https://github.com/willtanoe/raid/releases/latest/download/raid -o raid
+chmod +x raid
+sudo mv raid /usr/local/bin/
+raid
+
+# ARM64 (Raspberry Pi, Apple Silicon Linux VM, etc.)
+curl -L https://github.com/willtanoe/raid/releases/latest/download/raid-linux-arm64 -o raid
 chmod +x raid
 sudo mv raid /usr/local/bin/
 raid
 ```
 
-Or download a specific version:
-
-```bash
-curl -LO https://github.com/willtanoe/raid/releases/download/v0.2.1/raid
-chmod +x raid
-./raid
-```
+Or download a specific version from the [releases page](https://github.com/willtanoe/raid/releases).
 
 ### Build from source
 
