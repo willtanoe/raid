@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -120,6 +121,9 @@ type statusSnapshot struct {
 	TemperatureC    float64 `json:"temperature_c,omitempty"`
 	NetworkReceived uint64  `json:"network_received_bytes"`
 	NetworkSent     uint64  `json:"network_sent_bytes"`
+	BatteryPercent  int     `json:"battery_percent,omitempty"`
+	BatteryStatus   string  `json:"battery_status,omitempty"`
+	GPU             string  `json:"gpu,omitempty"`
 }
 
 func readCPUTimes() (cpuTimes, error) {
@@ -222,6 +226,97 @@ func firstTemperature() float64 {
 	return 0
 }
 
+func readBattery() (int, string) {
+	entries, err := os.ReadDir("/sys/class/power_supply")
+	if err != nil {
+		return 0, ""
+	}
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasPrefix(name, "BAT") {
+			continue
+		}
+		base := filepath.Join("/sys/class/power_supply", name)
+		capBytes, _ := os.ReadFile(filepath.Join(base, "capacity"))
+		statusBytes, _ := os.ReadFile(filepath.Join(base, "status"))
+		capacity := strings.TrimSpace(string(capBytes))
+		status := strings.TrimSpace(string(statusBytes))
+		if capacity != "" {
+			percent, _ := strconv.Atoi(capacity)
+			return percent, status
+		}
+	}
+	return 0, ""
+}
+
+func detectGPU() string {
+	if !commandExists("lspci") {
+		return readGPUFromDRM()
+	}
+	cmd := exec.Command("lspci")
+	output, err := cmd.Output()
+	if err != nil {
+		return readGPUFromDRM()
+	}
+	var lines []string
+	for _, line := range strings.Split(string(output), "\n") {
+		lower := strings.ToLower(line)
+		if strings.Contains(lower, "vga") || strings.Contains(lower, "3d") || strings.Contains(lower, "display") {
+			parts := strings.SplitN(line, " ", 3)
+			if len(parts) >= 3 {
+				lines = append(lines, strings.TrimSpace(parts[2]))
+			}
+		}
+	}
+	if len(lines) > 0 {
+		seen := make(map[string]bool)
+		var unique []string
+		for _, name := range lines {
+			if !seen[name] {
+				seen[name] = true
+				unique = append(unique, name)
+			}
+		}
+		return strings.Join(unique, "; ")
+	}
+	return readGPUFromDRM()
+}
+
+func readGPUFromDRM() string {
+	entries, err := os.ReadDir("/sys/class/drm")
+	if err != nil {
+		return ""
+	}
+	var names []string
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), "card") {
+			continue
+		}
+		devicePath := filepath.Join("/sys/class/drm", entry.Name(), "device")
+		vendorBytes, _ := os.ReadFile(filepath.Join(devicePath, "vendor_name"))
+		if len(vendorBytes) == 0 {
+			vendorBytes, _ = os.ReadFile(filepath.Join(devicePath, "vendor"))
+		}
+		vendor := strings.TrimSpace(string(vendorBytes))
+		if vendor == "" {
+			continue
+		}
+		names = append(names, vendor)
+	}
+	if len(names) == 0 {
+		return ""
+	}
+	seen := make(map[string]bool)
+	var unique []string
+	for _, name := range names {
+		if !seen[name] {
+			seen[name] = true
+			unique = append(unique, name)
+		}
+	}
+	return strings.Join(unique, ", ")
+}
+
 func collectStatus() (statusSnapshot, error) {
 	first, err := readCPUTimes()
 	if err != nil {
@@ -259,12 +354,15 @@ func collectStatus() (statusSnapshot, error) {
 	freeDisk := stat.Bavail * uint64(stat.Bsize)
 	totalMemory := mem["MemTotal"]
 	availableMemory := mem["MemAvailable"]
+	batteryPercent, batteryStatus := readBattery()
+	gpu := detectGPU()
 	return statusSnapshot{
 		Timestamp: time.Now().Format(time.RFC3339), Hostname: hostname,
 		Kernel: strings.TrimSpace(string(kernelBytes)), CPUPercent: cpuPercent, CPUCores: runtime.NumCPU(),
 		MemoryUsed: totalMemory - availableMemory, MemoryTotal: totalMemory,
 		DiskUsed: totalDisk - freeDisk, DiskTotal: totalDisk, Load1: load, UptimeSeconds: uptime,
 		TemperatureC: firstTemperature(), NetworkReceived: rx, NetworkSent: tx,
+		BatteryPercent: batteryPercent, BatteryStatus: batteryStatus, GPU: gpu,
 	}, nil
 }
 
@@ -304,6 +402,12 @@ func (a *app) runStatus(args []string) error {
 	fmt.Fprintf(a.out, "Uptime   %s\n", (time.Duration(snapshot.UptimeSeconds) * time.Second).Round(time.Minute))
 	if snapshot.TemperatureC > 0 {
 		fmt.Fprintf(a.out, "Thermal  %.1f C\n", snapshot.TemperatureC)
+	}
+	if snapshot.BatteryPercent > 0 {
+		fmt.Fprintf(a.out, "Battery  %d%% %s\n", snapshot.BatteryPercent, snapshot.BatteryStatus)
+	}
+	if snapshot.GPU != "" {
+		fmt.Fprintf(a.out, "GPU      %s\n", snapshot.GPU)
 	}
 	return nil
 }

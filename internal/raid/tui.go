@@ -42,6 +42,9 @@ var mainMenuItems = []menuItem{
 	{name: "Status", description: "Watch CPU, memory, disk, network, and thermal health", command: []string{"status"}},
 	{name: "Purge", description: "Preview rebuildable artifacts in the current project", command: []string{"purge"}},
 	{name: "Installer", description: "Review installer files older than seven days", command: []string{"installer"}},
+	{name: "Update", description: "Check and apply APT, Snap, and Flatpak updates", command: []string{"update"}},
+	{name: "Docker", description: "Preview and clean unused Docker containers and images", command: []string{"docker"}},
+	{name: "Search", description: "Find large or old files by size, age, or pattern", command: []string{"search"}},
 	{name: "History", description: "Read the local operation audit log", command: []string{"history"}},
 }
 

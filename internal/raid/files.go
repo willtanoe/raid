@@ -1,6 +1,7 @@
 package raid
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -54,6 +55,16 @@ func formatBytes(size int64) string {
 	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
+func matchInstallerExt(name string, simple map[string]bool, compound []string) bool {
+	lower := strings.ToLower(name)
+	for _, ext := range compound {
+		if strings.HasSuffix(lower, ext) {
+			return true
+		}
+	}
+	return simple[filepath.Ext(lower)]
+}
+
 func (a *app) runClean(args []string) error {
 	flags, rest, err := parseCommonFlags(args)
 	if err != nil {
@@ -67,10 +78,14 @@ func (a *app) runClean(args []string) error {
 		filepath.Join(a.home, ".cache", "fontconfig"),
 		filepath.Join(a.home, ".cache", "go-build"),
 		filepath.Join(a.home, ".cache", "pip", "http-v2"),
+		filepath.Join(a.home, ".cache", "pip"),
 		filepath.Join(a.home, ".npm", "_cacache"),
 		filepath.Join(a.home, ".cache", "yarn"),
 		filepath.Join(a.home, ".cache", "mesa_shader_cache"),
+		filepath.Join(a.home, ".cargo", "registry", "cache"),
+		filepath.Join(a.home, ".gradle", "caches"),
 	}
+	targetDirs = append(targetDirs, a.config.AdditionalCacheDirs...)
 	var targets []string
 	for _, dir := range targetDirs {
 		if _, err := os.Lstat(dir); err == nil {
@@ -251,7 +266,9 @@ func (a *app) runInstaller(args []string) error {
 		return errors.New("usage: raid installer [--dry-run] [--yes] [--permanent]")
 	}
 	roots := []string{filepath.Join(a.home, "Downloads")}
-	extensions := map[string]bool{".deb": true, ".appimage": true, ".rpm": true, ".run": true, ".iso": true}
+	extensions := map[string]bool{".deb": true, ".appimage": true, ".rpm": true, ".run": true, ".iso": true,
+		".gz": true, ".xz": true, ".bz2": true, ".zip": true, ".dmg": true}
+	compoundExtensions := []string{".tar.gz", ".tar.xz", ".tar.bz2"}
 	var installers []pathInfo
 	cutoff := time.Now().Add(-7 * 24 * time.Hour)
 	for _, root := range roots {
@@ -266,7 +283,7 @@ func (a *app) runInstaller(args []string) error {
 				}
 				return nil
 			}
-			if !extensions[strings.ToLower(filepath.Ext(entry.Name()))] {
+			if !matchInstallerExt(entry.Name(), extensions, compoundExtensions) {
 				return nil
 			}
 			info, err := entry.Info()
@@ -300,18 +317,125 @@ func (a *app) runInstaller(args []string) error {
 }
 
 func (a *app) runHistory(args []string) error {
-	if len(args) != 0 {
-		return errors.New("usage: raid history")
+	var (
+		commandFilter string
+		sinceFilter   string
+		jsonMode      bool
+	)
+	var rest []string
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--command":
+			i++
+			if i >= len(args) {
+				return errors.New("--command requires a value")
+			}
+			commandFilter = args[i]
+		case "--since":
+			i++
+			if i >= len(args) {
+				return errors.New("--since requires a value")
+			}
+			sinceFilter = args[i]
+		case "--json":
+			jsonMode = true
+		default:
+			if strings.HasPrefix(args[i], "-") {
+				return fmt.Errorf("unknown option %q", args[i])
+			}
+			rest = append(rest, args[i])
+		}
 	}
+	if len(rest) != 0 {
+		return errors.New("usage: raid history [--command <cmd>] [--since <date>] [--json]")
+	}
+
+	var cutoff time.Time
+	if sinceFilter != "" {
+		var err error
+		cutoff, err = time.Parse("2006-01-02", sinceFilter)
+		if err != nil {
+			cutoff, err = time.Parse(time.RFC3339, sinceFilter)
+			if err != nil {
+				return fmt.Errorf("invalid --since date: %s", sinceFilter)
+			}
+		}
+	}
+
 	lines, err := readLines(filepath.Join(a.stateDir, "operations.tsv"))
 	if os.IsNotExist(err) {
+		if jsonMode {
+			fmt.Fprintln(a.out, "[]")
+			return nil
+		}
 		fmt.Fprintln(a.out, "No operation history yet.")
 		return nil
 	}
 	if err != nil {
 		return err
 	}
+
+	var filtered []string
 	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		fields := strings.Split(line, "\t")
+		if len(fields) < 5 {
+			filtered = append(filtered, line)
+			continue
+		}
+		if commandFilter != "" && fields[2] != commandFilter {
+			continue
+		}
+		if !cutoff.IsZero() {
+			t, err := time.Parse(time.RFC3339, fields[0])
+			if err != nil || t.Before(cutoff) {
+				continue
+			}
+		}
+		filtered = append(filtered, line)
+	}
+
+	if jsonMode {
+		type entry struct {
+			Timestamp string `json:"timestamp"`
+			Status    string `json:"status"`
+			Action    string `json:"action"`
+			Path      string `json:"path"`
+			Detail    string `json:"detail,omitempty"`
+		}
+		var out []entry
+		for _, line := range filtered {
+			fields := strings.Split(line, "\t")
+			e := entry{}
+			if len(fields) > 0 {
+				e.Timestamp = fields[0]
+			}
+			if len(fields) > 1 {
+				e.Status = fields[1]
+			}
+			if len(fields) > 2 {
+				e.Action = fields[2]
+			}
+			if len(fields) > 3 {
+				e.Path = fields[3]
+			}
+			if len(fields) > 4 {
+				e.Detail = fields[4]
+			}
+			out = append(out, e)
+		}
+		encoder := json.NewEncoder(a.out)
+		encoder.SetIndent("", "  ")
+		return encoder.Encode(out)
+	}
+
+	if len(filtered) == 0 {
+		fmt.Fprintln(a.out, "No matching history entries.")
+		return nil
+	}
+	for _, line := range filtered {
 		fmt.Fprintln(a.out, line)
 	}
 	return nil

@@ -148,7 +148,14 @@ func (m statusModel) View() string {
 	} else {
 		cards = lipgloss.JoinVertical(lipgloss.Left, cpu, memory, disk, network)
 	}
-	footer := mutedStyle.Render(fmt.Sprintf("Updated %s  Uptime %s  Esc/q back  r refresh", m.snapshot.Timestamp, (time.Duration(m.snapshot.UptimeSeconds) * time.Second).Round(time.Minute)))
+	footer := mutedStyle.Render(fmt.Sprintf("Updated %s  Uptime %s", m.snapshot.Timestamp, (time.Duration(m.snapshot.UptimeSeconds) * time.Second).Round(time.Minute)))
+	if m.snapshot.BatteryPercent > 0 {
+		footer = mutedStyle.Render(fmt.Sprintf("Battery %d%% %s", m.snapshot.BatteryPercent, m.snapshot.BatteryStatus)) + "  " + footer
+	}
+	if m.snapshot.GPU != "" {
+		footer = mutedStyle.Render("GPU: "+m.snapshot.GPU) + "  " + footer
+	}
+	footer += "  " + mutedStyle.Render("Esc/q back  r refresh")
 	content := lipgloss.JoinVertical(lipgloss.Left, header, diagnosis, "", cards, "", footer)
 	return lipgloss.NewStyle().Padding(1, 2).Render(content)
 }

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-var raidCommands = "clean uninstall optimize analyze status purge installer history completion fingerprint version help"
+var raidCommands = "clean uninstall optimize analyze status purge installer update docker search history completion fingerprint version help"
 
 func (a *app) runCompletion(args []string) error {
 	if len(args) != 1 {

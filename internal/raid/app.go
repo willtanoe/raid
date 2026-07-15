@@ -13,6 +13,7 @@ import (
 type app struct {
 	home     string
 	stateDir string
+	config   config
 	out      io.Writer
 	errOut   io.Writer
 }
@@ -52,7 +53,7 @@ func newApp() (*app, error) {
 	if stateDir == "" {
 		stateDir = filepath.Join(home, ".local", "state", "raid")
 	}
-	return &app{home: filepath.Clean(home), stateDir: stateDir, out: os.Stdout, errOut: os.Stderr}, nil
+	return &app{home: filepath.Clean(home), stateDir: stateDir, config: loadConfig(home), out: os.Stdout, errOut: os.Stderr}, nil
 }
 
 func (a *app) run(args []string) error {
@@ -93,6 +94,12 @@ func (a *app) run(args []string) error {
 		return a.runCompletion(args)
 	case "fingerprint", "touchid":
 		return a.runFingerprint(args)
+	case "update":
+		return a.runUpdate(args)
+	case "docker":
+		return a.runDocker(args)
+	case "search":
+		return a.runSearch(args)
 	default:
 		return fmt.Errorf("unknown command %q; run 'raid help'", command)
 	}
@@ -142,6 +149,9 @@ Commands:
   status       Show a compact system health snapshot
   purge        Remove rebuildable project artifacts
   installer    Find or remove old installer files
+  update       Check and apply APT, Snap, and Flatpak updates
+  docker       Clean unused Docker containers, images, and volumes
+  search       Find files by size, age, or name pattern
   history      Show Raid operation history
   completion   Generate shell completion
   fingerprint  Inspect or enroll Linux fingerprint support

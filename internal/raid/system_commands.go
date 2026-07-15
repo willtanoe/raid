@@ -130,6 +130,8 @@ func (a *app) runOptimize(args []string) error {
 		{label: "Rebuild font cache", command: []string{"fc-cache", "-f"}, needs: "fc-cache"},
 		{label: "Vacuum journal entries older than 14 days", command: []string{"sudo", "-n", "journalctl", "--vacuum-time=14d"}, needs: "journalctl"},
 		{label: "Clean downloaded APT package files", command: []string{"sudo", "-n", "apt-get", "clean"}, needs: "apt-get"},
+		{label: "Remove unused APT packages and old kernels", command: []string{"sudo", "-n", "apt-get", "autoremove", "-y"}, needs: "apt-get"},
+		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
 	}
 	var available []maintenanceAction
 	for _, action := range actions {
@@ -197,4 +199,56 @@ func (a *app) runFingerprint(args []string) error {
 	default:
 		return errors.New("usage: raid fingerprint [status|enroll]")
 	}
+}
+
+func (a *app) runUpdate(args []string) error {
+	flags, rest, err := parseCommonFlags(args)
+	if err != nil {
+		return err
+	}
+	if len(rest) != 0 {
+		return errors.New("usage: raid update [--dry-run] [--yes]")
+	}
+	if flags.permanent {
+		return errors.New("--permanent applies only to file cleanup commands")
+	}
+
+	actions := []maintenanceAction{
+		{label: "Update APT package lists", command: []string{"sudo", "-n", "apt-get", "update"}, needs: "apt-get"},
+		{label: "Upgrade APT packages", command: []string{"sudo", "-n", "apt-get", "upgrade", "-y"}, needs: "apt-get"},
+		{label: "Refresh Snap packages", command: []string{"sudo", "-n", "snap", "refresh"}, needs: "snap"},
+	}
+
+	if commandExists("flatpak") {
+		actions = append(actions, maintenanceAction{
+			label: "Update Flatpak packages", command: []string{"flatpak", "update", "-y"}, needs: "flatpak",
+		})
+	}
+
+	var available []maintenanceAction
+	for _, action := range actions {
+		if commandExists(action.needs) {
+			available = append(available, action)
+			fmt.Fprintf(a.out, "PLAN     %s\n", action.label)
+			fmt.Fprintf(a.out, "         %s\n", strings.Join(action.command, " "))
+		}
+	}
+
+	if !flags.yes {
+		if len(available) == 0 {
+			fmt.Fprintln(a.out, "No package managers found.")
+			return nil
+		}
+		fmt.Fprintln(a.out, "Preview only. Use --yes to run all updates.")
+		return nil
+	}
+
+	var failures []error
+	for _, action := range available {
+		if err := a.runExternal("update", action.command); err != nil {
+			fmt.Fprintf(a.errOut, "task failed: %s: %v\n", action.label, err)
+			failures = append(failures, fmt.Errorf("%s: %w", action.label, err))
+		}
+	}
+	return errors.Join(failures...)
 }
