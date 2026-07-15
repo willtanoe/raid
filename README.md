@@ -29,6 +29,27 @@ Raid combines an interactive TUI with scriptable text and JSON output. Built on 
 
 ## Installation
 
+### Download binary (no Go required)
+
+Download the latest pre-built binary from the [releases page](https://github.com/willtanoe/raid/releases/latest):
+
+```bash
+curl -L https://github.com/willtanoe/raid/releases/latest/download/raid -o raid
+chmod +x raid
+sudo mv raid /usr/local/bin/
+raid
+```
+
+Or download a specific version:
+
+```bash
+curl -LO https://github.com/willtanoe/raid/releases/download/v0.2.1/raid
+chmod +x raid
+./raid
+```
+
+### Build from source
+
 Go 1.24 or newer required.
 
 ```bash
